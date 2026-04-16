@@ -113,6 +113,191 @@ routes:
 			t.Error("LoadConfig() expected error for invalid yaml")
 		}
 	})
+
+	t.Run("applies default timeouts", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+routes:
+  - method: GET
+    route: /test
+    service: localhost:3000
+    path: /test
+`
+		path := writeTempConfig(t, yaml)
+		cfg, err := LoadConfig(path)
+		if err != nil {
+			t.Fatalf("LoadConfig() error = %v", err)
+		}
+		if cfg.BaseConfig.ReadTimeoutSec != 15 {
+			t.Errorf("ReadTimeoutSec = %d, want 15", cfg.BaseConfig.ReadTimeoutSec)
+		}
+		if cfg.BaseConfig.WriteTimeoutSec != 30 {
+			t.Errorf("WriteTimeoutSec = %d, want 30", cfg.BaseConfig.WriteTimeoutSec)
+		}
+		if cfg.BaseConfig.IdleTimeoutSec != 60 {
+			t.Errorf("IdleTimeoutSec = %d, want 60", cfg.BaseConfig.IdleTimeoutSec)
+		}
+	})
+
+	t.Run("rate limit config", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+  rateLimit:
+    enabled: true
+    requestsPerSec: 50
+    burst: 100
+routes:
+  - method: GET
+    route: /test
+    service: localhost:3000
+    path: /test
+`
+		path := writeTempConfig(t, yaml)
+		cfg, err := LoadConfig(path)
+		if err != nil {
+			t.Fatalf("LoadConfig() error = %v", err)
+		}
+		if !cfg.BaseConfig.RateLimit.Enabled {
+			t.Error("RateLimit.Enabled = false, want true")
+		}
+		if cfg.BaseConfig.RateLimit.RequestsPerSec != 50 {
+			t.Errorf("RequestsPerSec = %d, want 50", cfg.BaseConfig.RateLimit.RequestsPerSec)
+		}
+	})
+}
+
+func TestValidate(t *testing.T) {
+	t.Run("no routes", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+routes: []
+`
+		path := writeTempConfig(t, yaml)
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Error("Expected validation error for no routes")
+		}
+	})
+
+	t.Run("missing route fields", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+routes:
+  - method: GET
+    route: ""
+    service: ""
+    path: ""
+`
+		path := writeTempConfig(t, yaml)
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Error("Expected validation error for missing fields")
+		}
+	})
+
+	t.Run("invalid method", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+routes:
+  - method: INVALID
+    route: /test
+    service: localhost:3000
+    path: /test
+`
+		path := writeTempConfig(t, yaml)
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Error("Expected validation error for invalid method")
+		}
+	})
+
+	t.Run("duplicate routes", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+routes:
+  - method: GET
+    route: /test
+    service: localhost:3000
+    path: /test
+  - method: GET
+    route: /test
+    service: localhost:3000
+    path: /test
+`
+		path := writeTempConfig(t, yaml)
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Error("Expected validation error for duplicate routes")
+		}
+	})
+
+	t.Run("auth protected without secret or service", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: true
+routes:
+  - method: GET
+    route: /test
+    service: localhost:3000
+    path: /test
+`
+		path := writeTempConfig(t, yaml)
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Error("Expected validation error for protected routes without auth config")
+		}
+	})
+
+	t.Run("mapping missing tag", func(t *testing.T) {
+		yaml := `
+config:
+  port: 8000
+  basePath: /api
+  auth:
+    defaultProtected: false
+routes:
+  - method: GET
+    route: /test
+    service: localhost:3000
+    path: /test
+    mapping:
+      - path: /other/{id}
+        service: localhost:3000
+        tag: ""
+`
+		path := writeTempConfig(t, yaml)
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Error("Expected validation error for mapping without tag")
+		}
+	})
 }
 
 func writeTempConfig(t *testing.T, content string) string {

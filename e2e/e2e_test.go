@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Wait for gateway to be ready
-	if err := waitForService(gatewayURL+"/api/products", 30*time.Second); err != nil {
+	if err := waitForService(gatewayURL+"/health", 30*time.Second); err != nil {
 		fmt.Printf("Gateway not ready: %v\n", err)
 		os.Exit(1)
 	}
@@ -417,6 +417,59 @@ func TestBackendErrors(t *testing.T) {
 
 		if resp.StatusCode != 404 && resp.StatusCode != 405 {
 			t.Fatalf("status = %d, want 404 or 405", resp.StatusCode)
+		}
+	})
+}
+
+// --- Health Check ---
+
+func TestHealthCheck(t *testing.T) {
+	t.Run("health endpoint returns 200", func(t *testing.T) {
+		resp, err := http.Get(gatewayURL + "/health")
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+
+		var body map[string]string
+		json.NewDecoder(resp.Body).Decode(&body)
+		if body["status"] != "ok" {
+			t.Errorf("status = %q, want ok", body["status"])
+		}
+	})
+}
+
+// --- Request ID ---
+
+func TestRequestID(t *testing.T) {
+	t.Run("response contains X-Request-ID", func(t *testing.T) {
+		resp, err := http.Get(gatewayURL + "/api/products")
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.Header.Get("X-Request-ID") == "" {
+			t.Error("Expected X-Request-ID header in response")
+		}
+	})
+
+	t.Run("preserves client request ID", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", gatewayURL+"/api/products", nil)
+		req.Header.Set("X-Request-ID", "e2e-trace-456")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.Header.Get("X-Request-ID") != "e2e-trace-456" {
+			t.Errorf("X-Request-ID = %q, want e2e-trace-456", resp.Header.Get("X-Request-ID"))
 		}
 	})
 }

@@ -1,9 +1,16 @@
 config:
   port: 8080
   basePath: /api
+  readTimeoutSec: 10
+  writeTimeoutSec: 30
+  idleTimeoutSec: 60
   auth:
     secret: "e2e-test-secret"
     defaultProtected: true
+  rateLimit:
+    enabled: true
+    requestsPerSec: 100
+    burst: 200
 
 routes:
   # Public: list all products with category mapping

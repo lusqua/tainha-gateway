@@ -4,19 +4,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aguiar-sh/tainha/internal/config"
 	"github.com/aguiar-sh/tainha/internal/util"
 )
 
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
 func Map(route config.Route, response []byte) ([]byte, error) {
 	var responseData interface{}
 	if err := json.Unmarshal(response, &responseData); err != nil {
-		log.Println("Error parsing JSON:", err)
+		slog.Error("error parsing JSON", "error", err)
 		return nil, fmt.Errorf("failed to parse response body: %w", err)
 	}
 
@@ -60,9 +65,9 @@ func Map(route config.Route, response []byte) ([]byte, error) {
 
 					mappedURL := fmt.Sprintf("%s%s%s", fullPath, strings.ReplaceAll(mapping.Path, "{"+param+"}", ""), valueStr)
 
-					log.Printf("Mapping: %s\n", mappedURL)
+					slog.Debug("mapping request", "url", mappedURL)
 
-					resp, err := http.Get(mappedURL)
+					resp, err := httpClient.Get(mappedURL)
 					if err != nil {
 						errChan <- fmt.Errorf("error making request to %s: %v", mappedURL, err)
 						return
@@ -96,7 +101,7 @@ func Map(route config.Route, response []byte) ([]byte, error) {
 
 	for err := range errChan {
 		if err != nil {
-			log.Println(err)
+			slog.Warn("mapping error", "error", err)
 		}
 	}
 

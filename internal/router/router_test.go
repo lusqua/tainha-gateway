@@ -356,6 +356,110 @@ func TestRouterWithAuthDelegation(t *testing.T) {
 	})
 }
 
+func TestHealthCheck(t *testing.T) {
+	cfg := &config.Config{
+		BaseConfig: config.BaseConfig{
+			BasePath: "/api",
+			Auth:     config.AuthConfig{DefaultProtected: false},
+		},
+		Routes: []config.Route{
+			{Method: "GET", Route: "/test", Service: "localhost:9999", Path: "/test"},
+		},
+	}
+
+	r, _ := SetupRouter(cfg)
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+
+	var body map[string]string
+	json.Unmarshal(rr.Body.Bytes(), &body)
+	if body["status"] != "ok" {
+		t.Errorf("status = %q, want ok", body["status"])
+	}
+}
+
+func TestRequestIDMiddleware(t *testing.T) {
+	backend := startMockBackend(t, `{"ok":true}`)
+	cfg := &config.Config{
+		BaseConfig: config.BaseConfig{
+			BasePath: "/api",
+			Auth:     config.AuthConfig{DefaultProtected: false},
+		},
+		Routes: []config.Route{
+			{Method: "GET", Route: "/test", Service: stripScheme(backend.URL), Path: "/test", Public: true},
+		},
+	}
+
+	r, _ := SetupRouter(cfg)
+
+	t.Run("generates request ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/test", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Header().Get("X-Request-ID") == "" {
+			t.Error("Expected X-Request-ID in response")
+		}
+	})
+
+	t.Run("preserves incoming request ID", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/test", nil)
+		req.Header.Set("X-Request-ID", "trace-123")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Header().Get("X-Request-ID") != "trace-123" {
+			t.Errorf("X-Request-ID = %q, want trace-123", rr.Header().Get("X-Request-ID"))
+		}
+	})
+}
+
+func TestRateLimitIntegration(t *testing.T) {
+	backend := startMockBackend(t, `{"ok":true}`)
+	cfg := &config.Config{
+		BaseConfig: config.BaseConfig{
+			BasePath: "/api",
+			Auth:     config.AuthConfig{DefaultProtected: false},
+			RateLimit: config.RateLimitConfig{
+				Enabled:        true,
+				RequestsPerSec: 5,
+				Burst:          3,
+			},
+		},
+		Routes: []config.Route{
+			{Method: "GET", Route: "/test", Service: stripScheme(backend.URL), Path: "/test", Public: true},
+		},
+	}
+
+	r, _ := SetupRouter(cfg)
+
+	// Exhaust burst
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("GET", "/api/test", nil)
+		req.RemoteAddr = "10.0.0.1:1234"
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("Request %d: status = %d, want 200", i, rr.Code)
+		}
+	}
+
+	// Should be rate limited
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rr.Code)
+	}
+}
+
 // helpers
 
 func startMockBackend(t *testing.T, responseBody string) *httptest.Server {
