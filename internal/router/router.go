@@ -15,6 +15,10 @@ import (
 	"github.com/aguiar-sh/tainha/internal/proxy"
 	"github.com/aguiar-sh/tainha/internal/util"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -37,16 +41,24 @@ func corsMiddleware(next http.Handler) http.Handler {
 func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 	r := mux.NewRouter()
 
-	// Health check (before any middleware)
+	// Health check and metrics (before any middleware)
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	}).Methods("GET")
 
+	if cfg.BaseConfig.Telemetry.Enabled {
+		r.Handle("/metrics", promhttp.Handler()).Methods("GET")
+	}
+
 	// Global middleware
 	r.Use(middleware.RequestID)
 	r.Use(corsMiddleware)
+
+	if cfg.BaseConfig.Telemetry.Enabled {
+		r.Use(middleware.Metrics)
+	}
 
 	if cfg.BaseConfig.RateLimit.Enabled {
 		limiter := middleware.NewRateLimiter(
@@ -72,7 +84,19 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 
 		fullPath := fmt.Sprintf("%s%s", cfg.BaseConfig.BasePath, route.Route)
 
+		tracer := otel.Tracer("tainha-gateway")
+
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx, span := tracer.Start(req.Context(), fmt.Sprintf("%s %s", route.Method, fullPath),
+				trace.WithAttributes(
+					attribute.String("http.method", req.Method),
+					attribute.String("http.route", fullPath),
+					attribute.String("http.target", req.URL.Path),
+				),
+			)
+			defer span.End()
+			req = req.WithContext(ctx)
+
 			reqID := req.Header.Get(middleware.HeaderRequestID)
 			slog.Info("request received",
 				"path", req.URL.Path,
@@ -118,8 +142,15 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 			}
 
 			// Only use recorder if we need to map the response
+			_, proxySpan := tracer.Start(ctx, "proxy",
+				trace.WithAttributes(
+					attribute.String("peer.service", path),
+					attribute.String("http.url", servicePath+targetPath),
+				),
+			)
 			rec := httptest.NewRecorder()
 			reverseProxy.ServeHTTP(rec, proxyReq)
+			proxySpan.End()
 
 			// Read the response body
 			respBody := rec.Body.Bytes()
@@ -138,7 +169,13 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 				slog.Warn("response body is empty", "path", req.URL.Path, "requestId", reqID)
 			}
 
+			_, mapSpan := tracer.Start(ctx, "mapper",
+				trace.WithAttributes(
+					attribute.Int("mapping.count", len(route.Mapping)),
+				),
+			)
 			response, err := mapper.Map(route, respBody)
+			mapSpan.End()
 			if err != nil {
 				slog.Error("error mapping response", "error", err, "requestId", reqID)
 				http.Error(w, "Failed to map response", http.StatusInternalServerError)

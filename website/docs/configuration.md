@@ -17,11 +17,22 @@ Tainha is configured through a single YAML file. By default, it looks for `./con
 config:
   port: 8000                        # Gateway listen port
   basePath: /api                    # Prefix for all routes
+  readTimeoutSec: 15                # Server read timeout
+  writeTimeoutSec: 30               # Server write timeout
+  idleTimeoutSec: 60                # Server idle timeout
   auth:
     secret: "your-secret-key"       # JWT signing secret (HS256)
     defaultProtected: true          # Require auth on all routes by default
     authService: localhost:5000     # (Optional) External auth service
     authPath: /auth/validate        # (Optional) Auth service endpoint
+  rateLimit:
+    enabled: true                   # Enable rate limiting
+    requestsPerSec: 100             # Requests per second per IP
+    burst: 200                      # Burst allowance
+  telemetry:
+    enabled: true                   # Enable OTEL metrics + traces
+    serviceName: tainha-gateway     # Service name in traces
+    exporterEndpoint: localhost:4317 # OTLP gRPC endpoint
 
 routes:
   - method: GET                     # HTTP method
@@ -47,6 +58,15 @@ routes:
 | `auth.defaultProtected` | bool | `false` | Whether routes require auth by default |
 | `auth.authService` | string | — | External auth service host (enables delegation) |
 | `auth.authPath` | string | `/validate` | Endpoint path on the auth service |
+| `rateLimit.enabled` | bool | `false` | Enable per-IP rate limiting |
+| `rateLimit.requestsPerSec` | int | `100` | Max requests per second per IP |
+| `rateLimit.burst` | int | `requestsPerSec * 2` | Burst allowance |
+| `readTimeoutSec` | int | `15` | HTTP server read timeout |
+| `writeTimeoutSec` | int | `30` | HTTP server write timeout |
+| `idleTimeoutSec` | int | `60` | HTTP server idle timeout |
+| `telemetry.enabled` | bool | `false` | Enable OpenTelemetry metrics and traces |
+| `telemetry.serviceName` | string | `tainha-gateway` | Service name in OTEL |
+| `telemetry.exporterEndpoint` | string | — | OTLP gRPC endpoint for traces |
 
 ## Route Section
 
