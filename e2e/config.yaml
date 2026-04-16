@@ -1,0 +1,64 @@
+config:
+  port: 8080
+  basePath: /api
+  auth:
+    secret: "e2e-test-secret"
+    defaultProtected: true
+
+routes:
+  # Public: list all products with category mapping
+  - method: GET
+    route: /products
+    service: mock-service:4000
+    path: /products
+    public: true
+    mapping:
+      - path: /categories?id={categoryId}
+        service: mock-service:4000
+        tag: category
+        removeKeyMapping: true
+
+  # Public: get single product
+  - method: GET
+    route: /products/{productId}
+    service: mock-service:4000
+    path: /products/{productId}
+    public: true
+
+  # Protected: list all users
+  - method: GET
+    route: /users
+    service: mock-service:4000
+    path: /users
+
+  # Protected: get single user with orders mapping
+  - method: GET
+    route: /users/{userId}
+    service: mock-service:4000
+    path: /users/{userId}
+    mapping:
+      - path: /orders?userId={id}
+        service: mock-service:4000
+        tag: orders
+        removeKeyMapping: false
+
+  # Protected: list all orders
+  - method: GET
+    route: /orders
+    service: mock-service:4000
+    path: /orders
+
+  # Public: categories
+  - method: GET
+    route: /categories
+    service: mock-service:4000
+    path: /categories
+    public: true
+
+  # SSE: real-time stock events
+  - method: GET
+    route: /events
+    service: mock-service:4000
+    path: /events
+    isSSE: true
+    public: true
