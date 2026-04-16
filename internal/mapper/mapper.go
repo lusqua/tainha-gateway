@@ -24,6 +24,14 @@ var httpClient = &http.Client{
 	},
 }
 
+// mappingCache is nil when caching is disabled
+var mappingCache *Cache
+
+// SetCache configures the global mapping cache. Pass nil to disable.
+func SetCache(c *Cache) {
+	mappingCache = c
+}
+
 func Map(route config.Route, response []byte) ([]byte, error) {
 	var responseData interface{}
 	if err := json.Unmarshal(response, &responseData); err != nil {
@@ -74,22 +82,40 @@ func Map(route config.Route, response []byte) ([]byte, error) {
 					path, protocol := util.PathProtocol(mapping.Service)
 
 					fullPath := fmt.Sprintf("%s://%s", protocol, path)
-
 					mappedURL := fmt.Sprintf("%s%s%s", fullPath, strings.ReplaceAll(mapping.Path, "{"+param+"}", ""), valueStr)
 
-					slog.Debug("mapping request", "url", mappedURL)
+					var body []byte
+					cached := false
 
-					resp, err := httpClient.Get(mappedURL)
-					if err != nil {
-						errChan <- fmt.Errorf("error making request to %s: %v", mappedURL, err)
-						return
+					// Check cache
+					if mappingCache != nil {
+						if data, ok := mappingCache.Get(mappedURL); ok {
+							body = data
+							cached = true
+							slog.Debug("mapping cache hit", "url", mappedURL)
+						}
 					}
-					defer resp.Body.Close()
 
-					body, err := io.ReadAll(resp.Body)
-					if err != nil {
-						errChan <- fmt.Errorf("error reading response from %s: %v", mappedURL, err)
-						return
+					if !cached {
+						slog.Debug("mapping request", "url", mappedURL)
+
+						resp, err := httpClient.Get(mappedURL)
+						if err != nil {
+							errChan <- fmt.Errorf("error making request to %s: %v", mappedURL, err)
+							return
+						}
+						defer resp.Body.Close()
+
+						body, err = io.ReadAll(resp.Body)
+						if err != nil {
+							errChan <- fmt.Errorf("error reading response from %s: %v", mappedURL, err)
+							return
+						}
+
+						// Store in cache
+						if mappingCache != nil {
+							mappingCache.Set(mappedURL, body)
+						}
 					}
 
 					var mappedData interface{}

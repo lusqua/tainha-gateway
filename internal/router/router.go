@@ -60,6 +60,19 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 		r.Use(middleware.Metrics)
 	}
 
+	if cfg.BaseConfig.CircuitBreaker.Enabled {
+		cb := middleware.NewCircuitBreaker(
+			cfg.BaseConfig.CircuitBreaker.MaxFailures,
+			cfg.BaseConfig.CircuitBreaker.TimeoutSec,
+			cfg.BaseConfig.CircuitBreaker.HalfOpenRequests,
+		)
+		r.Use(cb.Middleware)
+		slog.Info("circuit breaker enabled",
+			"maxFailures", cfg.BaseConfig.CircuitBreaker.MaxFailures,
+			"timeoutSec", cfg.BaseConfig.CircuitBreaker.TimeoutSec,
+		)
+	}
+
 	if cfg.BaseConfig.RateLimit.Enabled {
 		limiter := middleware.NewRateLimiter(
 			cfg.BaseConfig.RateLimit.RequestsPerSec,
@@ -84,9 +97,33 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 
 		fullPath := fmt.Sprintf("%s%s", cfg.BaseConfig.BasePath, route.Route)
 
+		// WebSocket routes get a dedicated handler
+		if route.IsWebSocket {
+			wsHandler := proxy.WebSocketProxy(path)
+			if cfg.BaseConfig.Auth.DefaultProtected && !route.Public {
+				if cfg.BaseConfig.Auth.AuthService != "" {
+					authPath := cfg.BaseConfig.Auth.AuthPath
+					if authPath == "" {
+						authPath = "/validate"
+					}
+					_, authProtocol := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
+					authHost, _ := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
+					authURL := fmt.Sprintf("%s://%s%s", authProtocol, authHost, authPath)
+					r.Handle(fullPath, auth.ValidateWithService(authURL, wsHandler)).Methods("GET")
+				} else {
+					r.Handle(fullPath, auth.ValidateJWT(cfg.BaseConfig.Auth.Secret, wsHandler)).Methods("GET")
+				}
+			} else {
+				r.Handle(fullPath, wsHandler).Methods("GET")
+			}
+			continue
+		}
+
 		tracer := otel.Tracer("tainha-gateway")
 
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// Set backend service for circuit breaker
+			req.Header.Set("X-Backend-Service", path)
 			ctx, span := tracer.Start(req.Context(), fmt.Sprintf("%s %s", route.Method, fullPath),
 				trace.WithAttributes(
 					attribute.String("http.method", req.Method),
