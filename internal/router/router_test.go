@@ -384,6 +384,58 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpoint(t *testing.T) {
+	cfg := &config.Config{
+		BaseConfig: config.BaseConfig{
+			BasePath:  "/api",
+			Auth:      config.AuthConfig{DefaultProtected: false},
+			Telemetry: config.TelemetryConfig{Enabled: true, ServiceName: "test"},
+		},
+		Routes: []config.Route{
+			{Method: "GET", Route: "/test", Service: "localhost:9999", Path: "/test"},
+		},
+	}
+
+	r, _ := SetupRouter(cfg)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+
+	body := rr.Body.String()
+	if len(body) == 0 {
+		t.Error("Expected non-empty metrics response")
+	}
+}
+
+func TestMetricsEndpointDisabled(t *testing.T) {
+	cfg := &config.Config{
+		BaseConfig: config.BaseConfig{
+			BasePath:  "/api",
+			Auth:      config.AuthConfig{DefaultProtected: false},
+			Telemetry: config.TelemetryConfig{Enabled: false},
+		},
+		Routes: []config.Route{
+			{Method: "GET", Route: "/test", Service: "localhost:9999", Path: "/test"},
+		},
+	}
+
+	r, _ := SetupRouter(cfg)
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	// Should 404 or 405 since metrics endpoint is not registered
+	if rr.Code == http.StatusOK {
+		t.Error("Expected /metrics to not be available when telemetry is disabled")
+	}
+}
+
 func TestRequestIDMiddleware(t *testing.T) {
 	backend := startMockBackend(t, `{"ok":true}`)
 	cfg := &config.Config{

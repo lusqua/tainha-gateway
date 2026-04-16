@@ -15,6 +15,7 @@ const sidebars: SidebarsConfig = {
     },
     'response-mapping',
     'sse',
+    'observability',
   ],
 };
 

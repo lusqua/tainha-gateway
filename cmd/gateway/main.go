@@ -13,6 +13,7 @@ import (
 
 	"github.com/aguiar-sh/tainha/internal/config"
 	"github.com/aguiar-sh/tainha/internal/router"
+	"github.com/aguiar-sh/tainha/internal/telemetry"
 )
 
 func main() {
@@ -27,6 +28,17 @@ func main() {
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
 		os.Exit(1)
+	}
+
+	// Initialize OpenTelemetry
+	if cfg.BaseConfig.Telemetry.Enabled {
+		ctx := context.Background()
+		shutdown, err := telemetry.Setup(ctx, cfg.BaseConfig.Telemetry)
+		if err != nil {
+			slog.Error("failed to initialize telemetry", "error", err)
+			os.Exit(1)
+		}
+		defer shutdown(ctx)
 	}
 
 	r, err := router.SetupRouter(cfg)

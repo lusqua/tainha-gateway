@@ -20,11 +20,18 @@ type RateLimitConfig struct {
 	Burst         int  `yaml:"burst" mapstructure:"burst"`
 }
 
+type TelemetryConfig struct {
+	Enabled          bool   `yaml:"enabled" mapstructure:"enabled"`
+	ServiceName      string `yaml:"serviceName" mapstructure:"serviceName"`
+	ExporterEndpoint string `yaml:"exporterEndpoint" mapstructure:"exporterEndpoint"`
+}
+
 type BaseConfig struct {
 	Port            int             `mapstructure:"port" default:"8080"`
 	BasePath        string          `mapstructure:"basePath" default:"/api"`
 	Auth            AuthConfig      `mapstructure:"auth"`
 	RateLimit       RateLimitConfig `mapstructure:"rateLimit"`
+	Telemetry       TelemetryConfig `mapstructure:"telemetry"`
 	ReadTimeoutSec  int             `mapstructure:"readTimeoutSec" yaml:"readTimeoutSec"`
 	WriteTimeoutSec int             `mapstructure:"writeTimeoutSec" yaml:"writeTimeoutSec"`
 	IdleTimeoutSec  int             `mapstructure:"idleTimeoutSec" yaml:"idleTimeoutSec"`
@@ -86,6 +93,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.BaseConfig.IdleTimeoutSec == 0 {
 		c.BaseConfig.IdleTimeoutSec = 60
+	}
+	if c.BaseConfig.Telemetry.Enabled && c.BaseConfig.Telemetry.ServiceName == "" {
+		c.BaseConfig.Telemetry.ServiceName = "tainha-gateway"
 	}
 	if c.BaseConfig.RateLimit.Enabled {
 		if c.BaseConfig.RateLimit.RequestsPerSec == 0 {
