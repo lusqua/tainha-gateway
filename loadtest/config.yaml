@@ -1,0 +1,58 @@
+config:
+  port: 8080
+  basePath: /api
+  readTimeoutSec: 15
+  writeTimeoutSec: 30
+  idleTimeoutSec: 60
+  auth:
+    secret: "e2e-test-secret"
+    defaultProtected: true
+  # Rate limit disabled for load testing
+  rateLimit:
+    enabled: false
+  telemetry:
+    enabled: false
+
+routes:
+  - method: GET
+    route: /products
+    service: mock-service:4000
+    path: /products
+    public: true
+    mapping:
+      - path: /categories?id={categoryId}
+        service: mock-service:4000
+        tag: category
+        removeKeyMapping: true
+
+  - method: GET
+    route: /products/{productId}
+    service: mock-service:4000
+    path: /products/{productId}
+    public: true
+
+  - method: GET
+    route: /users
+    service: mock-service:4000
+    path: /users
+
+  - method: GET
+    route: /users/{userId}
+    service: mock-service:4000
+    path: /users/{userId}
+    mapping:
+      - path: /orders?userId={id}
+        service: mock-service:4000
+        tag: orders
+        removeKeyMapping: false
+
+  - method: GET
+    route: /orders
+    service: mock-service:4000
+    path: /orders
+
+  - method: GET
+    route: /categories
+    service: mock-service:4000
+    path: /categories
+    public: true

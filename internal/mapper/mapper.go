@@ -16,6 +16,12 @@ import (
 
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        256,
+		MaxIdleConnsPerHost: 64,
+		MaxConnsPerHost:     256,
+		IdleConnTimeout:     90 * time.Second,
+	},
 }
 
 func Map(route config.Route, response []byte) ([]byte, error) {
