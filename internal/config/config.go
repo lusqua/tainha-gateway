@@ -7,6 +7,8 @@ import (
 type AuthConfig struct {
 	Secret           string `yaml:"secret"`
 	DefaultProtected bool   `yaml:"defaultProtected"`
+	AuthService      string `mapstructure:"authService" yaml:"authService"`
+	AuthPath         string `mapstructure:"authPath" yaml:"authPath"`
 }
 
 type BaseConfig struct {

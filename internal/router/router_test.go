@@ -277,6 +277,85 @@ func TestRouterWithMapping(t *testing.T) {
 	}
 }
 
+func TestRouterWithAuthDelegation(t *testing.T) {
+	// Mock auth service
+	authService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth == "Bearer valid-delegated-token" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"userId":   "42",
+				"username": "delegated-user",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "unauthorized", "success": false})
+	}))
+	t.Cleanup(authService.Close)
+
+	backend := startMockBackend(t, `{"data":"secret"}`)
+
+	cfg := &config.Config{
+		BaseConfig: config.BaseConfig{
+			BasePath: "/api",
+			Auth: config.AuthConfig{
+				DefaultProtected: true,
+				AuthService:      stripScheme(authService.URL),
+				AuthPath:         "/validate",
+			},
+		},
+		Routes: []config.Route{
+			{Method: "GET", Route: "/secret", Service: stripScheme(backend.URL), Path: "/secret"},
+			{Method: "GET", Route: "/open", Service: stripScheme(backend.URL), Path: "/open", Public: true},
+		},
+	}
+
+	r, _ := SetupRouter(cfg)
+
+	t.Run("delegation: no token returns 401", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/secret", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", rr.Code)
+		}
+	})
+
+	t.Run("delegation: invalid token returns 401", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/secret", nil)
+		req.Header.Set("Authorization", "Bearer bad-token")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", rr.Code)
+		}
+	})
+
+	t.Run("delegation: valid token returns 200", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/secret", nil)
+		req.Header.Set("Authorization", "Bearer valid-delegated-token")
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rr.Code)
+		}
+	})
+
+	t.Run("delegation: public route skips auth", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/open", nil)
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rr.Code)
+		}
+	})
+}
+
 // helpers
 
 func startMockBackend(t *testing.T, responseBody string) *httptest.Server {
