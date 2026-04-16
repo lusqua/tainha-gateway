@@ -2,7 +2,7 @@ package router
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +11,7 @@ import (
 	"github.com/aguiar-sh/tainha/internal/auth"
 	"github.com/aguiar-sh/tainha/internal/config"
 	"github.com/aguiar-sh/tainha/internal/mapper"
+	"github.com/aguiar-sh/tainha/internal/middleware"
 	"github.com/aguiar-sh/tainha/internal/proxy"
 	"github.com/aguiar-sh/tainha/internal/util"
 	"github.com/gorilla/mux"
@@ -20,9 +21,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization, X-CSRF-Token")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization, X-CSRF-Token, X-Request-ID")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Type, X-Request-ID")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -35,7 +36,29 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 	r := mux.NewRouter()
+
+	// Health check (before any middleware)
+	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}).Methods("GET")
+
+	// Global middleware
+	r.Use(middleware.RequestID)
 	r.Use(corsMiddleware)
+
+	if cfg.BaseConfig.RateLimit.Enabled {
+		limiter := middleware.NewRateLimiter(
+			cfg.BaseConfig.RateLimit.RequestsPerSec,
+			cfg.BaseConfig.RateLimit.Burst,
+		)
+		r.Use(limiter.Middleware)
+		slog.Info("rate limiting enabled",
+			"requestsPerSec", cfg.BaseConfig.RateLimit.RequestsPerSec,
+			"burst", cfg.BaseConfig.RateLimit.Burst,
+		)
+	}
 
 	for _, route := range cfg.Routes {
 
@@ -44,13 +67,18 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 
 		reverseProxy, err := proxy.NewReverseProxy(servicePath)
 		if err != nil {
-			log.Fatalf("Erro ao criar proxy para %s: %v", route.Path, err)
+			return nil, fmt.Errorf("failed to create proxy for %s: %w", route.Path, err)
 		}
 
 		fullPath := fmt.Sprintf("%s%s", cfg.BaseConfig.BasePath, route.Route)
 
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			log.Println("Request received for:", req.URL.Path)
+			reqID := req.Header.Get(middleware.HeaderRequestID)
+			slog.Info("request received",
+				"path", req.URL.Path,
+				"method", req.Method,
+				"requestId", reqID,
+			)
 
 			// Extract path parameters using the utility function
 			params := util.ExtractPathParams(route.Path)
@@ -71,7 +99,7 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 			// Parse the target path to separate path and query
 			parsedURL, err := url.Parse(targetPath)
 			if err != nil {
-				log.Printf("Error parsing target path: %v", err)
+				slog.Error("error parsing target path", "error", err, "requestId", reqID)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
@@ -107,12 +135,12 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 
 			// Check if the response body is empty
 			if len(respBody) == 0 {
-				log.Println("Warning: Response body is empty")
+				slog.Warn("response body is empty", "path", req.URL.Path, "requestId", reqID)
 			}
 
 			response, err := mapper.Map(route, respBody)
 			if err != nil {
-				log.Printf("Error mapping response: %v", err)
+				slog.Error("error mapping response", "error", err, "requestId", reqID)
 				http.Error(w, "Failed to map response", http.StatusInternalServerError)
 				return
 			}
@@ -131,10 +159,10 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 			// Write the final response
 			n, err := w.Write(response)
 			if err != nil {
-				log.Printf("Error writing response: %v", err)
+				slog.Error("error writing response", "error", err, "requestId", reqID)
 				return
 			} else if n != len(response) {
-				log.Printf("Warning: not all bytes were written. Expected %d, wrote %d", len(response), n)
+				slog.Warn("not all bytes written", "expected", len(response), "wrote", n, "requestId", reqID)
 			}
 		})
 

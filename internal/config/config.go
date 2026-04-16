@@ -1,20 +1,33 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/viper"
 )
 
 type AuthConfig struct {
-	Secret           string `yaml:"secret"`
-	DefaultProtected bool   `yaml:"defaultProtected"`
-	AuthService      string `mapstructure:"authService" yaml:"authService"`
-	AuthPath         string `mapstructure:"authPath" yaml:"authPath"`
+	Secret           string `yaml:"secret" mapstructure:"secret"`
+	DefaultProtected bool   `yaml:"defaultProtected" mapstructure:"defaultProtected"`
+	AuthService      string `yaml:"authService" mapstructure:"authService"`
+	AuthPath         string `yaml:"authPath" mapstructure:"authPath"`
+}
+
+type RateLimitConfig struct {
+	Enabled       bool `yaml:"enabled" mapstructure:"enabled"`
+	RequestsPerSec int  `yaml:"requestsPerSec" mapstructure:"requestsPerSec"`
+	Burst         int  `yaml:"burst" mapstructure:"burst"`
 }
 
 type BaseConfig struct {
-	Port     int        `mapstructure:"port" default:"8080"`
-	BasePath string     `mapstructure:"basePath" default:"/api"`
-	Auth     AuthConfig `mapstructure:"auth"`
+	Port            int             `mapstructure:"port" default:"8080"`
+	BasePath        string          `mapstructure:"basePath" default:"/api"`
+	Auth            AuthConfig      `mapstructure:"auth"`
+	RateLimit       RateLimitConfig `mapstructure:"rateLimit"`
+	ReadTimeoutSec  int             `mapstructure:"readTimeoutSec" yaml:"readTimeoutSec"`
+	WriteTimeoutSec int             `mapstructure:"writeTimeoutSec" yaml:"writeTimeoutSec"`
+	IdleTimeoutSec  int             `mapstructure:"idleTimeoutSec" yaml:"idleTimeoutSec"`
 }
 
 type RouteMapping struct {
@@ -52,5 +65,97 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation: %w", err)
+	}
+
+	config.applyDefaults()
+
 	return &config, nil
+}
+
+func (c *Config) applyDefaults() {
+	if c.BaseConfig.Port == 0 {
+		c.BaseConfig.Port = 8080
+	}
+	if c.BaseConfig.ReadTimeoutSec == 0 {
+		c.BaseConfig.ReadTimeoutSec = 15
+	}
+	if c.BaseConfig.WriteTimeoutSec == 0 {
+		c.BaseConfig.WriteTimeoutSec = 30
+	}
+	if c.BaseConfig.IdleTimeoutSec == 0 {
+		c.BaseConfig.IdleTimeoutSec = 60
+	}
+	if c.BaseConfig.RateLimit.Enabled {
+		if c.BaseConfig.RateLimit.RequestsPerSec == 0 {
+			c.BaseConfig.RateLimit.RequestsPerSec = 100
+		}
+		if c.BaseConfig.RateLimit.Burst == 0 {
+			c.BaseConfig.RateLimit.Burst = c.BaseConfig.RateLimit.RequestsPerSec * 2
+		}
+	}
+}
+
+var validMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true, "PATCH": true, "HEAD": true, "OPTIONS": true,
+}
+
+func (c *Config) Validate() error {
+	var errs []string
+
+	if len(c.Routes) == 0 {
+		errs = append(errs, "no routes defined")
+	}
+
+	if c.BaseConfig.Auth.DefaultProtected {
+		if c.BaseConfig.Auth.Secret == "" && c.BaseConfig.Auth.AuthService == "" {
+			errs = append(errs, "auth is defaultProtected but neither secret nor authService is configured")
+		}
+	}
+
+	seen := make(map[string]bool)
+	for i, route := range c.Routes {
+		prefix := fmt.Sprintf("routes[%d]", i)
+
+		if route.Method == "" {
+			errs = append(errs, fmt.Sprintf("%s: method is required", prefix))
+		} else if !validMethods[strings.ToUpper(route.Method)] {
+			errs = append(errs, fmt.Sprintf("%s: invalid method %q", prefix, route.Method))
+		}
+
+		if route.Route == "" {
+			errs = append(errs, fmt.Sprintf("%s: route is required", prefix))
+		}
+		if route.Service == "" {
+			errs = append(errs, fmt.Sprintf("%s: service is required", prefix))
+		}
+		if route.Path == "" {
+			errs = append(errs, fmt.Sprintf("%s: path is required", prefix))
+		}
+
+		key := route.Method + " " + route.Route
+		if seen[key] {
+			errs = append(errs, fmt.Sprintf("%s: duplicate route %s", prefix, key))
+		}
+		seen[key] = true
+
+		for j, mapping := range route.Mapping {
+			mPrefix := fmt.Sprintf("%s.mapping[%d]", prefix, j)
+			if mapping.Path == "" {
+				errs = append(errs, fmt.Sprintf("%s: path is required", mPrefix))
+			}
+			if mapping.Service == "" {
+				errs = append(errs, fmt.Sprintf("%s: service is required", mPrefix))
+			}
+			if mapping.Tag == "" {
+				errs = append(errs, fmt.Sprintf("%s: tag is required", mPrefix))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
 }

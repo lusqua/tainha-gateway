@@ -22,7 +22,7 @@ services:
       mock-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/products"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 2s
       timeout: 5s
       retries: 10
