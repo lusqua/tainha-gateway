@@ -73,23 +73,19 @@ The gateway is now proxying requests from `:8000/api/users` to your backend at `
 
 ## How It Works
 
-```
-Client Request
-     │
-     ▼
-┌─────────────┐
-│   Gateway    │
-│  :8000/api   │
-├─────────────┤
-│ CORS         │ ← Applied to all routes
-│ Auth (JWT)   │ ← If route is protected
-│ Proxy        │ ← Forward to backend
-│ Mapper       │ ← Enrich response (optional)
-└─────────────┘
-     │
-     ▼
-Backend Service
-  :3000/users
+```mermaid
+flowchart TD
+    A[Client Request] --> B[Gateway :8000/api]
+    B --> C[CORS Middleware]
+    C --> D{Route Protected?}
+    D -->|Yes| E[Validate JWT]
+    D -->|No / Public| G[Proxy to Backend]
+    E -->|Valid| G
+    E -->|Invalid| F[401 Unauthorized]
+    G --> H{Has Mappings?}
+    H -->|Yes| I[Fetch & Enrich Response]
+    H -->|No| J[Return Response]
+    I --> J
 ```
 
 ## Next Steps

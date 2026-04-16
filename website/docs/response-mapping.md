@@ -17,24 +17,21 @@ When a route has `mapping` rules, the gateway:
 4. Merges the mapped data into each response item
 5. Returns the enriched response to the client
 
-```
-Client                    Gateway                   Service A         Service B
-  │                         │                          │                 │
-  │ GET /api/products       │                          │                 │
-  │────────────────────────>│                          │                 │
-  │                         │ GET /products            │                 │
-  │                         │─────────────────────────>│                 │
-  │                         │     [{id:1,catId:"c1"}]  │                 │
-  │                         │<─────────────────────────│                 │
-  │                         │                                            │
-  │                         │ GET /categories?id=c1    (parallel)        │
-  │                         │───────────────────────────────────────────>│
-  │                         │         {name:"Electronics"}              │
-  │                         │<──────────────────────────────────────────│
-  │                         │                                            │
-  │  [{id:1,               │                                            │
-  │    category:{name:...}}]│                                            │
-  │<────────────────────────│                                            │
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    participant A as Service A
+    participant B as Service B
+
+    C->>G: GET /api/products
+    G->>A: GET /products
+    A-->>G: [{id:1, catId:"c1"}]
+    par Parallel mapping
+        G->>B: GET /categories?id=c1
+        B-->>G: {name:"Electronics"}
+    end
+    G-->>C: [{id:1, category:{name:"Electronics"}}]
 ```
 
 ## Configuration

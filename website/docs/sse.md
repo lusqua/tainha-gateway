@@ -28,20 +28,20 @@ For SSE routes, the gateway:
 3. Proxies the request directly to the backend
 4. Streams the response in real-time (no buffering or recording)
 
-```
-Client                    Gateway                   Backend SSE
-  │                         │                          │
-  │ GET /api/events         │                          │
-  │────────────────────────>│ GET /sse                 │
-  │                         │─────────────────────────>│
-  │                         │                          │
-  │  data: {"event":1}      │  data: {"event":1}       │
-  │<────────────────────────│<─────────────────────────│
-  │                         │                          │
-  │  data: {"event":2}      │  data: {"event":2}       │
-  │<────────────────────────│<─────────────────────────│
-  │                         │                          │
-  │  ...stream continues... │  ...stream continues...  │
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    participant B as Backend SSE
+
+    C->>G: GET /api/events
+    G->>B: GET /sse
+    loop Streaming
+        B-->>G: data: {"event":1}
+        G-->>C: data: {"event":1}
+        B-->>G: data: {"event":2}
+        G-->>C: data: {"event":2}
+    end
 ```
 
 ## Key Differences from Regular Routes
