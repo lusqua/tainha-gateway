@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const (
@@ -26,7 +28,9 @@ type ErrorResponse struct {
 func jsonError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: message, Success: false})
+	if err := json.NewEncoder(w).Encode(ErrorResponse{Error: message, Success: false}); err != nil {
+		log.Printf("Failed to encode JSON error response: %v", err)
+	}
 	log.Println("Invalid JWT token", message)
 }
 
@@ -73,9 +77,10 @@ func ValidateJWT(secret string, next http.Handler) http.Handler {
 				}
 			}
 
+			caser := cases.Title(language.Und)
 			for key, value := range claims {
 				if str, ok := value.(string); ok {
-					headerKey := fmt.Sprintf("%s%s", HeaderPrefix, strings.Title(key))
+					headerKey := HeaderPrefix + caser.String(key)
 					r.Header.Set(headerKey, str)
 				}
 			}
