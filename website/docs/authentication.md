@@ -32,22 +32,17 @@ config:
 3. Gateway extracts claims and forwards them as `X-` headers
 4. Backend receives the request with claim headers
 
-```
-Client                        Gateway                      Backend
-  │                             │                             │
-  │ GET /api/users              │                             │
-  │ Authorization: Bearer xxx   │                             │
-  │────────────────────────────>│                             │
-  │                             │ Validate JWT (HS256)        │
-  │                             │ Extract claims              │
-  │                             │                             │
-  │                             │ GET /users                  │
-  │                             │ X-Username: alice           │
-  │                             │ X-Role: admin               │
-  │                             │────────────────────────────>│
-  │                             │                             │
-  │         200 OK              │         200 OK              │
-  │<────────────────────────────│<────────────────────────────│
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    participant B as Backend
+
+    C->>G: GET /api/users<br/>Authorization: Bearer xxx
+    G->>G: Validate JWT (HS256)<br/>Extract claims
+    G->>B: GET /users<br/>X-Username: alice<br/>X-Role: admin
+    B-->>G: 200 OK
+    G-->>C: 200 OK
 ```
 
 ### Public routes
@@ -118,26 +113,20 @@ When `authService` is configured, the gateway calls your service instead of vali
 3. Your service validates the token and responds with claims (200) or an error
 4. Gateway forwards claims as `X-` headers to the backend
 
-```
-Client                  Gateway                  Auth Service           Backend
-  │                       │                           │                    │
-  │ GET /api/users        │                           │                    │
-  │ Authorization: xxx    │                           │                    │
-  │──────────────────────>│                           │                    │
-  │                       │ GET /auth/validate        │                    │
-  │                       │ Authorization: xxx        │                    │
-  │                       │──────────────────────────>│                    │
-  │                       │                           │ Validate token     │
-  │                       │      200 OK               │                    │
-  │                       │      {"userId":"1",...}    │                    │
-  │                       │<──────────────────────────│                    │
-  │                       │                                                │
-  │                       │ GET /users                                     │
-  │                       │ X-userId: 1                                    │
-  │                       │───────────────────────────────────────────────>│
-  │                       │                                                │
-  │       200 OK          │                  200 OK                        │
-  │<──────────────────────│<───────────────────────────────────────────────│
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    participant A as Auth Service
+    participant B as Backend
+
+    C->>G: GET /api/users<br/>Authorization: Bearer xxx
+    G->>A: GET /auth/validate<br/>Authorization: Bearer xxx
+    A->>A: Validate token
+    A-->>G: 200 OK<br/>{"userId":"1", "role":"admin"}
+    G->>B: GET /users<br/>X-userId: 1<br/>X-role: admin
+    B-->>G: 200 OK
+    G-->>C: 200 OK
 ```
 
 ### Auth Service Contract
