@@ -4,7 +4,15 @@ const sidebars: SidebarsConfig = {
   docsSidebar: [
     'getting-started',
     'configuration',
-    'authentication',
+    {
+      type: 'category',
+      label: 'Authentication',
+      link: {type: 'doc', id: 'authentication/index'},
+      items: [
+        'authentication/local-jwt',
+        'authentication/delegation',
+      ],
+    },
     'response-mapping',
     'sse',
   ],
