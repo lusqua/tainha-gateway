@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aguiar-sh/tainha/internal/config"
@@ -179,10 +180,10 @@ func TestMap(t *testing.T) {
 	})
 
 	t.Run("multiple mappings on same item", func(t *testing.T) {
-		callCount := 0
+		var callCount atomic.Int32
 		mockService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			callCount++
-			json.NewEncoder(w).Encode(map[string]string{"result": fmt.Sprintf("mapped-%d", callCount)})
+			n := callCount.Add(1)
+			json.NewEncoder(w).Encode(map[string]string{"result": fmt.Sprintf("mapped-%d", n)})
 		}))
 		defer mockService.Close()
 
