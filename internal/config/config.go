@@ -26,15 +26,30 @@ type TelemetryConfig struct {
 	ExporterEndpoint string `yaml:"exporterEndpoint" mapstructure:"exporterEndpoint"`
 }
 
+type MappingCacheConfig struct {
+	Enabled bool `yaml:"enabled" mapstructure:"enabled"`
+	TTLSec  int  `yaml:"ttlSec" mapstructure:"ttlSec"`
+	MaxSize int  `yaml:"maxSize" mapstructure:"maxSize"`
+}
+
+type CircuitBreakerConfig struct {
+	Enabled          bool `yaml:"enabled" mapstructure:"enabled"`
+	MaxFailures      int  `yaml:"maxFailures" mapstructure:"maxFailures"`
+	TimeoutSec       int  `yaml:"timeoutSec" mapstructure:"timeoutSec"`
+	HalfOpenRequests int  `yaml:"halfOpenRequests" mapstructure:"halfOpenRequests"`
+}
+
 type BaseConfig struct {
-	Port            int             `mapstructure:"port" default:"8080"`
-	BasePath        string          `mapstructure:"basePath" default:"/api"`
-	Auth            AuthConfig      `mapstructure:"auth"`
-	RateLimit       RateLimitConfig `mapstructure:"rateLimit"`
-	Telemetry       TelemetryConfig `mapstructure:"telemetry"`
-	ReadTimeoutSec  int             `mapstructure:"readTimeoutSec" yaml:"readTimeoutSec"`
-	WriteTimeoutSec int             `mapstructure:"writeTimeoutSec" yaml:"writeTimeoutSec"`
-	IdleTimeoutSec  int             `mapstructure:"idleTimeoutSec" yaml:"idleTimeoutSec"`
+	Port            int                  `mapstructure:"port" default:"8080"`
+	BasePath        string               `mapstructure:"basePath" default:"/api"`
+	Auth            AuthConfig           `mapstructure:"auth"`
+	RateLimit       RateLimitConfig      `mapstructure:"rateLimit"`
+	Telemetry       TelemetryConfig      `mapstructure:"telemetry"`
+	MappingCache    MappingCacheConfig   `mapstructure:"mappingCache" yaml:"mappingCache"`
+	CircuitBreaker  CircuitBreakerConfig `mapstructure:"circuitBreaker" yaml:"circuitBreaker"`
+	ReadTimeoutSec  int                  `mapstructure:"readTimeoutSec" yaml:"readTimeoutSec"`
+	WriteTimeoutSec int                  `mapstructure:"writeTimeoutSec" yaml:"writeTimeoutSec"`
+	IdleTimeoutSec  int                  `mapstructure:"idleTimeoutSec" yaml:"idleTimeoutSec"`
 }
 
 type RouteMapping struct {
@@ -45,13 +60,14 @@ type RouteMapping struct {
 }
 
 type Route struct {
-	Method  string         `mapstructure:"method"`
-	Path    string         `mapstructure:"path"`
-	Service string         `mapstructure:"service"`
-	Mapping []RouteMapping `mapstructure:"mapping"`
-	Route   string         `mapstructure:"route"`
-	IsSSE   bool           `mapstructure:"isSSE,omitempty" yaml:"isSSE,omitempty"`
-	Public  bool           `mapstructure:"public,omitempty" yaml:"public,omitempty"`
+	Method      string         `mapstructure:"method"`
+	Path        string         `mapstructure:"path"`
+	Service     string         `mapstructure:"service"`
+	Mapping     []RouteMapping `mapstructure:"mapping"`
+	Route       string         `mapstructure:"route"`
+	IsSSE       bool           `mapstructure:"isSSE,omitempty" yaml:"isSSE,omitempty"`
+	IsWebSocket bool           `mapstructure:"isWebSocket,omitempty" yaml:"isWebSocket,omitempty"`
+	Public      bool           `mapstructure:"public,omitempty" yaml:"public,omitempty"`
 }
 
 type Config struct {
@@ -96,6 +112,25 @@ func (c *Config) applyDefaults() {
 	}
 	if c.BaseConfig.Telemetry.Enabled && c.BaseConfig.Telemetry.ServiceName == "" {
 		c.BaseConfig.Telemetry.ServiceName = "tainha-gateway"
+	}
+	if c.BaseConfig.MappingCache.Enabled {
+		if c.BaseConfig.MappingCache.TTLSec == 0 {
+			c.BaseConfig.MappingCache.TTLSec = 60
+		}
+		if c.BaseConfig.MappingCache.MaxSize == 0 {
+			c.BaseConfig.MappingCache.MaxSize = 1000
+		}
+	}
+	if c.BaseConfig.CircuitBreaker.Enabled {
+		if c.BaseConfig.CircuitBreaker.MaxFailures == 0 {
+			c.BaseConfig.CircuitBreaker.MaxFailures = 5
+		}
+		if c.BaseConfig.CircuitBreaker.TimeoutSec == 0 {
+			c.BaseConfig.CircuitBreaker.TimeoutSec = 30
+		}
+		if c.BaseConfig.CircuitBreaker.HalfOpenRequests == 0 {
+			c.BaseConfig.CircuitBreaker.HalfOpenRequests = 1
+		}
 	}
 	if c.BaseConfig.RateLimit.Enabled {
 		if c.BaseConfig.RateLimit.RequestsPerSec == 0 {

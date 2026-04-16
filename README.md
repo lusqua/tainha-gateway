@@ -170,10 +170,10 @@ make e2e
 - [x] Structured logging
 - [x] Config validation
 - [x] Request ID tracing
-- [ ] Mapping cache
-- [ ] Circuit breaker
-- [ ] WebSocket support
-- [ ] Hot config reload
+- [x] Mapping cache
+- [x] Circuit breaker
+- [x] WebSocket support
+- [x] Hot config reload (SIGHUP)
 - [ ] JWT with RS256 / JWK
 
 ## Contributing
