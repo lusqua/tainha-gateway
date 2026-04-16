@@ -151,7 +151,18 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 		}
 
 		if cfg.BaseConfig.Auth.DefaultProtected && !route.Public {
-			handler = auth.ValidateJWT(cfg.BaseConfig.Auth.Secret, handler).ServeHTTP
+			if cfg.BaseConfig.Auth.AuthService != "" {
+				authPath := cfg.BaseConfig.Auth.AuthPath
+				if authPath == "" {
+					authPath = "/validate"
+				}
+				_, authProtocol := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
+				authHost, _ := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
+				authURL := fmt.Sprintf("%s://%s%s", authProtocol, authHost, authPath)
+				handler = auth.ValidateWithService(authURL, handler).ServeHTTP
+			} else {
+				handler = auth.ValidateJWT(cfg.BaseConfig.Auth.Secret, handler).ServeHTTP
+			}
 		}
 
 		r.Handle(fullPath, handler).Methods(route.Method, "OPTIONS")
