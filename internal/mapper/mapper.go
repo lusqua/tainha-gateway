@@ -45,15 +45,21 @@ func Map(route config.Route, response []byte) ([]byte, error) {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(dataToProcess)*len(route.Mapping))
 
+	// One mutex per item to avoid race conditions on concurrent map writes
+	itemMu := make([]sync.Mutex, len(dataToProcess))
+
 	for i := range dataToProcess {
 		for _, mapping := range route.Mapping {
 			wg.Add(1)
-			go func(item map[string]interface{}, mapping config.RouteMapping) {
+			go func(idx int, item map[string]interface{}, mapping config.RouteMapping) {
 				defer wg.Done()
 				pathParams := util.ExtractPathParams(mapping.Path)
 
 				for _, param := range pathParams {
+					itemMu[idx].Lock()
 					value, exists := item[param]
+					itemMu[idx].Unlock()
+
 					if !exists {
 						continue
 					}
@@ -86,13 +92,14 @@ func Map(route config.Route, response []byte) ([]byte, error) {
 						return
 					}
 
+					itemMu[idx].Lock()
 					item[mapping.Tag] = mappedData
-
 					if mapping.RemoveKeyMapping {
 						delete(item, param)
 					}
+					itemMu[idx].Unlock()
 				}
-			}(dataToProcess[i], mapping)
+			}(i, dataToProcess[i], mapping)
 		}
 	}
 
