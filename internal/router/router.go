@@ -21,6 +21,25 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// wrapAuth wraps a handler with the appropriate auth middleware based on config.
+func wrapAuth(cfg *config.Config, handler http.Handler) http.Handler {
+	authCfg := cfg.BaseConfig.Auth
+	if authCfg.AuthService != "" {
+		authPath := authCfg.AuthPath
+		if authPath == "" {
+			authPath = "/validate"
+		}
+		_, authProtocol := util.PathProtocol(authCfg.AuthService)
+		authHost, _ := util.PathProtocol(authCfg.AuthService)
+		authURL := fmt.Sprintf("%s://%s%s", authProtocol, authHost, authPath)
+		return auth.ValidateWithService(authURL, handler)
+	}
+	if authCfg.JwksURL != "" {
+		return auth.ValidateJWKS(authCfg.JwksURL, handler)
+	}
+	return auth.ValidateJWT(authCfg.Secret, handler)
+}
+
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -101,18 +120,7 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 		if route.IsWebSocket {
 			wsHandler := proxy.WebSocketProxy(path)
 			if cfg.BaseConfig.Auth.DefaultProtected && !route.Public {
-				if cfg.BaseConfig.Auth.AuthService != "" {
-					authPath := cfg.BaseConfig.Auth.AuthPath
-					if authPath == "" {
-						authPath = "/validate"
-					}
-					_, authProtocol := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
-					authHost, _ := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
-					authURL := fmt.Sprintf("%s://%s%s", authProtocol, authHost, authPath)
-					r.Handle(fullPath, auth.ValidateWithService(authURL, wsHandler)).Methods("GET")
-				} else {
-					r.Handle(fullPath, auth.ValidateJWT(cfg.BaseConfig.Auth.Secret, wsHandler)).Methods("GET")
-				}
+				r.Handle(fullPath, wrapAuth(cfg, wsHandler)).Methods("GET")
 			} else {
 				r.Handle(fullPath, wsHandler).Methods("GET")
 			}
@@ -253,18 +261,7 @@ func SetupRouter(cfg *config.Config) (*mux.Router, error) {
 		}
 
 		if cfg.BaseConfig.Auth.DefaultProtected && !route.Public {
-			if cfg.BaseConfig.Auth.AuthService != "" {
-				authPath := cfg.BaseConfig.Auth.AuthPath
-				if authPath == "" {
-					authPath = "/validate"
-				}
-				_, authProtocol := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
-				authHost, _ := util.PathProtocol(cfg.BaseConfig.Auth.AuthService)
-				authURL := fmt.Sprintf("%s://%s%s", authProtocol, authHost, authPath)
-				handler = auth.ValidateWithService(authURL, handler).ServeHTTP
-			} else {
-				handler = auth.ValidateJWT(cfg.BaseConfig.Auth.Secret, handler).ServeHTTP
-			}
+			handler = wrapAuth(cfg, handler).ServeHTTP
 		}
 
 		r.Handle(fullPath, handler).Methods(route.Method, "OPTIONS")

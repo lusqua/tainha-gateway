@@ -11,37 +11,60 @@ Tainha is configured through a single YAML file. By default, it looks for `./con
 ./tainha -config /path/to/config.yaml
 ```
 
+Send `SIGHUP` to reload config without restarting:
+
+```bash
+kill -HUP $(pgrep tainha)
+```
+
 ## Full Reference
 
 ```yaml
 config:
-  port: 8000                        # Gateway listen port
-  basePath: /api                    # Prefix for all routes
-  readTimeoutSec: 15                # Server read timeout
-  writeTimeoutSec: 30               # Server write timeout
-  idleTimeoutSec: 60                # Server idle timeout
+  port: 8000
+  basePath: /api
+  readTimeoutSec: 15
+  writeTimeoutSec: 30
+  idleTimeoutSec: 60
+
   auth:
-    secret: "your-secret-key"       # JWT signing secret (HS256)
-    defaultProtected: true          # Require auth on all routes by default
-    authService: localhost:5000     # (Optional) External auth service
-    authPath: /auth/validate        # (Optional) Auth service endpoint
+    secret: "your-secret-key"       # HS256 shared secret
+    jwksUrl: "https://.../.well-known/jwks.json"  # RS256/ES256 via JWKS
+    algorithm: RS256                # Algorithm hint (optional)
+    defaultProtected: true
+    authService: localhost:5000     # Or delegate to your own service
+    authPath: /auth/validate
+
   rateLimit:
-    enabled: true                   # Enable rate limiting
-    requestsPerSec: 100             # Requests per second per IP
-    burst: 200                      # Burst allowance
+    enabled: true
+    requestsPerSec: 100
+    burst: 200
+
+  mappingCache:
+    enabled: true
+    ttlSec: 60
+    maxSize: 1000
+
+  circuitBreaker:
+    enabled: true
+    maxFailures: 5
+    timeoutSec: 30
+    halfOpenRequests: 1
+
   telemetry:
-    enabled: true                   # Enable OTEL metrics + traces
-    serviceName: tainha-gateway     # Service name in traces
-    exporterEndpoint: localhost:4317 # OTLP gRPC endpoint
+    enabled: true
+    serviceName: tainha-gateway
+    exporterEndpoint: localhost:4317
 
 routes:
-  - method: GET                     # HTTP method
-    route: /products                # Client-facing path (gateway)
-    service: localhost:3000         # Backend service host
-    path: /products                 # Backend endpoint path
-    public: true                    # Override auth (skip validation)
-    isSSE: false                    # Enable SSE streaming
-    mapping:                        # Response enrichment (optional)
+  - method: GET
+    route: /products
+    service: localhost:3000
+    path: /products
+    public: true
+    isSSE: false
+    isWebSocket: false
+    mapping:
       - path: /categories?id={categoryId}
         service: localhost:3000
         tag: category
@@ -54,17 +77,53 @@ routes:
 |-------|------|---------|-------------|
 | `port` | int | `8080` | Port the gateway listens on |
 | `basePath` | string | `/api` | Prefix prepended to all route paths |
-| `auth.secret` | string | — | HMAC secret for local JWT validation |
-| `auth.defaultProtected` | bool | `false` | Whether routes require auth by default |
-| `auth.authService` | string | — | External auth service host (enables delegation) |
-| `auth.authPath` | string | `/validate` | Endpoint path on the auth service |
-| `rateLimit.enabled` | bool | `false` | Enable per-IP rate limiting |
-| `rateLimit.requestsPerSec` | int | `100` | Max requests per second per IP |
-| `rateLimit.burst` | int | `requestsPerSec * 2` | Burst allowance |
 | `readTimeoutSec` | int | `15` | HTTP server read timeout |
 | `writeTimeoutSec` | int | `30` | HTTP server write timeout |
 | `idleTimeoutSec` | int | `60` | HTTP server idle timeout |
-| `telemetry.enabled` | bool | `false` | Enable OpenTelemetry metrics and traces |
+
+### Auth
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auth.secret` | string | — | HMAC secret for HS256 validation |
+| `auth.jwksUrl` | string | — | JWKS endpoint URL for RS256/ES256 |
+| `auth.algorithm` | string | — | Algorithm hint (optional) |
+| `auth.defaultProtected` | bool | `false` | Require auth on all routes by default |
+| `auth.authService` | string | — | External auth service (enables delegation) |
+| `auth.authPath` | string | `/validate` | Auth service endpoint path |
+
+**Priority:** `authService` > `jwksUrl` > `secret`. Only one is used.
+
+### Rate Limiting
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `rateLimit.enabled` | bool | `false` | Enable per-IP rate limiting |
+| `rateLimit.requestsPerSec` | int | `100` | Max requests per second per IP |
+| `rateLimit.burst` | int | `requestsPerSec * 2` | Burst allowance |
+
+### Mapping Cache
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mappingCache.enabled` | bool | `false` | Cache mapping responses |
+| `mappingCache.ttlSec` | int | `60` | Time-to-live in seconds |
+| `mappingCache.maxSize` | int | `1000` | Max cached entries (LRU eviction) |
+
+### Circuit Breaker
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `circuitBreaker.enabled` | bool | `false` | Enable per-service circuit breaker |
+| `circuitBreaker.maxFailures` | int | `5` | Failures before opening circuit |
+| `circuitBreaker.timeoutSec` | int | `30` | Seconds before trying half-open |
+| `circuitBreaker.halfOpenRequests` | int | `1` | Probe requests in half-open state |
+
+### Telemetry
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `telemetry.enabled` | bool | `false` | Enable OTEL metrics + traces |
 | `telemetry.serviceName` | string | `tainha-gateway` | Service name in OTEL |
 | `telemetry.exporterEndpoint` | string | — | OTLP gRPC endpoint for traces |
 
@@ -72,12 +131,13 @@ routes:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `method` | string | — | HTTP method (GET, POST, PUT, DELETE) |
+| `method` | string | — | HTTP method (GET, POST, PUT, DELETE, PATCH) |
 | `route` | string | — | Gateway path (what clients hit) |
 | `service` | string | — | Backend host (with or without protocol) |
 | `path` | string | — | Backend path (supports `{param}` placeholders) |
 | `public` | bool | `false` | Skip authentication for this route |
 | `isSSE` | bool | `false` | Enable SSE passthrough |
+| `isWebSocket` | bool | `false` | Enable WebSocket proxy |
 | `mapping` | array | — | Response mapping rules |
 
 ## Route Mapping
@@ -96,62 +156,15 @@ Both `route` and `path` support dynamic parameters with `{paramName}` syntax:
 ```yaml
 routes:
   - method: GET
-    route: /users/{userId}          # Client hits /api/users/42
+    route: /users/{userId}
     service: localhost:3000
-    path: /users/{userId}           # Proxied to backend as /users/42
+    path: /users/{userId}
 ```
 
 ## Service URLs
 
-The `service` field accepts URLs with or without protocol:
-
 ```yaml
-# All valid:
 service: localhost:3000             # Defaults to http://
 service: http://localhost:3000
 service: https://api.example.com
-```
-
-## Examples
-
-### Simple proxy
-
-```yaml
-routes:
-  - method: GET
-    route: /products
-    service: localhost:3000
-    path: /products
-    public: true
-```
-
-### Protected route with path params
-
-```yaml
-routes:
-  - method: GET
-    route: /users/{userId}
-    service: localhost:3000
-    path: /users/{userId}
-    # public: false (default — requires JWT)
-```
-
-### Route with response mapping
-
-```yaml
-routes:
-  - method: GET
-    route: /posts
-    service: localhost:3000
-    path: /posts
-    public: true
-    mapping:
-      - path: /comments?postId={id}
-        service: localhost:3000
-        tag: comments
-        removeKeyMapping: false
-      - path: /users/{userId}
-        service: localhost:3000
-        tag: author
-        removeKeyMapping: true
 ```

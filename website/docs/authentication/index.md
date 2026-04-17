@@ -5,26 +5,35 @@ slug: /authentication
 
 # Authentication
 
-Tainha supports two authentication modes:
+Tainha supports three authentication modes:
 
-1. **[Local JWT](/docs/authentication/local-jwt)** — the gateway validates tokens directly using a shared secret (HS256)
-2. **[Auth Delegation](/docs/authentication/delegation)** — the gateway delegates validation to your own auth service
+1. **[Local JWT (HS256)](/docs/authentication/local-jwt)** — validate tokens with a shared secret
+2. **[JWKS (RS256/ES256)](/docs/authentication/jwks)** — validate tokens with public keys from a JWKS endpoint
+3. **[Auth Delegation](/docs/authentication/delegation)** — delegate validation to your own auth service
 
-Both modes protect routes marked as non-public and forward user claims as headers to your backend services.
+All modes protect routes marked as non-public and forward user claims as `X-` headers to your backend services.
 
 ## Quick Comparison
 
-| | Local JWT | Auth Delegation |
-|---|---|---|
-| **Setup** | Just a secret in config | Requires running auth service |
-| **Algorithms** | HS256 only | Any (your service decides) |
-| **Performance** | Faster (no network call) | Extra hop per request |
-| **Flexibility** | Limited to JWT claims | Full control over validation |
-| **Use case** | Simple apps, prototyping | Production, custom auth |
+| | Local JWT | JWKS | Auth Delegation |
+|---|---|---|---|
+| **Setup** | Secret in config | JWKS URL in config | Running auth service |
+| **Algorithms** | HS256 | RS256, ES256, etc. | Any |
+| **Performance** | Fastest | Fast (keys cached) | Extra hop per request |
+| **Providers** | Custom | Auth0, Keycloak, Firebase, Cognito | Any |
+| **Use case** | Prototyping, simple apps | Standard identity providers | Full custom auth |
+
+## Priority
+
+If multiple options are configured:
+
+```
+authService > jwksUrl > secret
+```
 
 ## Public Routes
 
-Both modes respect the `public` flag. Mark routes as `public: true` to skip authentication entirely:
+Mark routes as `public: true` to skip authentication:
 
 ```yaml
 routes:
@@ -32,22 +41,24 @@ routes:
     route: /products
     service: localhost:3000
     path: /products
-    public: true          # No token required
+    public: true
 
   - method: GET
     route: /orders
     service: localhost:3000
     path: /orders
-    # public: false       # Token required (default)
+    # requires auth (default)
 ```
 
 ## Claim Forwarding
 
-In both modes, authenticated user data is forwarded to your backend as `X-` headers. Your backend reads these headers to identify the user — no need to parse the token again.
+In all modes, string claims are forwarded to your backend as `X-` headers:
 
-| Source Claim | Forwarded Header |
+| JWT Claim | Forwarded Header |
 |-----------|-----------------|
 | `username` | `X-Username` |
 | `role` | `X-Role` |
 | `sub` | `X-Sub` |
 | `email` | `X-Email` |
+
+Your backend reads these headers to identify the user — no need to parse the token again.
