@@ -3,7 +3,19 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     'getting-started',
-    'configuration',
+    {
+      type: 'category',
+      label: 'Configuration',
+      link: {type: 'doc', id: 'configuration/index'},
+      items: [
+        'configuration/server',
+        'configuration/auth',
+        'configuration/rate-limiting',
+        'configuration/resilience',
+        'configuration/telemetry',
+        'configuration/routes',
+      ],
+    },
     {
       type: 'category',
       label: 'Authentication',
