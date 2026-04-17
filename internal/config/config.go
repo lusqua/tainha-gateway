@@ -12,6 +12,8 @@ type AuthConfig struct {
 	DefaultProtected bool   `yaml:"defaultProtected" mapstructure:"defaultProtected"`
 	AuthService      string `yaml:"authService" mapstructure:"authService"`
 	AuthPath         string `yaml:"authPath" mapstructure:"authPath"`
+	JwksURL          string `yaml:"jwksUrl" mapstructure:"jwksUrl"`
+	Algorithm        string `yaml:"algorithm" mapstructure:"algorithm"`
 }
 
 type RateLimitConfig struct {

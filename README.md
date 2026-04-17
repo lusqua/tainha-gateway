@@ -174,7 +174,7 @@ make e2e
 - [x] Circuit breaker
 - [x] WebSocket support
 - [x] Hot config reload (SIGHUP)
-- [ ] JWT with RS256 / JWK
+- [x] JWT with RS256 / JWK (via JWKS endpoint)
 
 ## Contributing
 

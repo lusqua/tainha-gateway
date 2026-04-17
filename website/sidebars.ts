@@ -10,11 +10,14 @@ const sidebars: SidebarsConfig = {
       link: {type: 'doc', id: 'authentication/index'},
       items: [
         'authentication/local-jwt',
+        'authentication/jwks',
         'authentication/delegation',
       ],
     },
     'response-mapping',
     'sse',
+    'websocket',
+    'resilience',
     'observability',
   ],
 };
