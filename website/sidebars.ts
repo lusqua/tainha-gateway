@@ -14,7 +14,16 @@ const sidebars: SidebarsConfig = {
         'authentication/delegation',
       ],
     },
-    'response-mapping',
+    {
+      type: 'category',
+      label: 'Response Mapping',
+      link: {type: 'doc', id: 'response-mapping/index'},
+      items: [
+        'response-mapping/how-it-works',
+        'response-mapping/configuration',
+        'response-mapping/examples',
+      ],
+    },
     'sse',
     'websocket',
     'resilience',
